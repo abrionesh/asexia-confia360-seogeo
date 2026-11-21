@@ -1,0 +1,6 @@
+{
+  "name": "confia360 seo-geo",
+  "description": "Plataforma de posicionamiento local Geo-Grid, monitorización GEO en buscadores IA, contenido con aprobación humana y analítica ROI para pymes y agencias.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
