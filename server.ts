@@ -62,7 +62,9 @@ function resolveDataDir(): string {
     if (!fs.existsSync(primary)) {
       fs.mkdirSync(primary, { recursive: true });
     }
-    fs.accessSync(primary, fs.constants.W_OK);
+    const probe = path.join(primary, `.write-test-${process.pid}`);
+    fs.writeFileSync(probe, 'ok', 'utf-8');
+    fs.unlinkSync(probe);
     return primary;
   } catch {
     const fallback = path.resolve(os.tmpdir(), 'confia360-data');
@@ -4408,7 +4410,18 @@ Devuelve JSON con hasta 3 patrones concretos: { topPatterns: [{ theme, count, re
     res.json(store);
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'Ruta API no encontrada.' });
+  });
+
+  const distPath = path.resolve(__dirname, 'dist');
+  const hasDistBuild = fs.existsSync(path.join(distPath, 'index.html'));
+  const runningUnderTsx = process.execArgv.some((arg) => arg.includes('tsx'));
+  const useProdStatic =
+    process.env.NODE_ENV === 'production' ||
+    (!runningUnderTsx && hasDistBuild);
+
+  if (!useProdStatic) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
@@ -4467,7 +4480,6 @@ export class ErrorOverlay extends BaseElement {}
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

@@ -5077,7 +5077,15 @@
           "syncedModulesSummary": "3 módulos base + Ficha Única + Escucha Social + Tutor Gemini",
           "priorityMode": "Ficha Maestra Prioritaria"
         },
-        "updatedAt": "2026-11-21 17:06"
+        "updatedAt": "2026-11-21 17:06",
+        "modulePrices": {
+          "reputacion_local": 99,
+          "seo_geo": 120,
+          "campanas": 80
+        },
+        "socialAddonPriceEur": 39,
+        "specialClientAmountEur": null,
+        "specialClientAmountNote": ""
       }
     },
     {
@@ -7130,7 +7138,15 @@
           "syncedModulesSummary": "3 módulos base + Ficha Única + Escucha Social + Tutor Gemini",
           "priorityMode": "Ficha Maestra Prioritaria"
         },
-        "updatedAt": "2026-11-21 08:30"
+        "updatedAt": "2026-11-21 08:30",
+        "modulePrices": {
+          "reputacion_local": 49,
+          "seo_geo": 50,
+          "campanas": 30
+        },
+        "socialAddonPriceEur": 39,
+        "specialClientAmountEur": null,
+        "specialClientAmountNote": ""
       }
     }
   ],
