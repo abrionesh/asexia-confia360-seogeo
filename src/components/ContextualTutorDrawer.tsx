@@ -36,18 +36,18 @@ const SCREEN_GUIDES: Record<NavSection, ScreenGuide> = {
     ],
   },
   client: {
-    title: 'Ficha Única de Cliente Confia360',
+    title: 'Control Maestro de Cliente en Administración (Asexia)',
     purpose:
-      'Centraliza con prioridad máxima todos los datos fiscales, sedes, estado de cuenta, suscripciones en curso, fechas de pagos pendientes y configuración global.',
+      'Disponible dentro de Administración bajo usuario Asexia y PIN. Centraliza identificación fiscal, precios editables por módulo, importe especial para cliente, suscripciones, pagos y sincronización bidireccional Confia360.',
     steps: [
-      'Consulta el Cuadro de Control Visual superior para ver de un vistazo estado contractual, MRR y pagos pendientes.',
-      'Edita identificación, contactos o sedes y pulsa "Guardar y propagar ficha" para actualizar todo Confia360.',
-      'En "Suscripciones y Pagos" controla fechas de vencimiento y marca facturas como pagadas en un clic.',
+      'Desbloquea Administración con usuario Asexia y tu PIN.',
+      'Edita precios por módulo o fija un importe especial de cliente y guarda con prioridad maestra.',
+      'Controla suscripciones, pagos pendientes y sincroniza bidireccionalmente con la API de Confia360.',
     ],
     quickQuestions: [
-      '¿Cuál es mi próximo pago pendiente y su fecha?',
-      '¿Qué pasa cuando actualizo la Ficha Única?',
-      '¿Cómo sincronizo estos datos con Confia360?',
+      '¿Cómo aplico un importe especial a este cliente?',
+      '¿Dónde modifico los precios de cada módulo?',
+      '¿Cómo sincronizo bidireccionalmente con Confia360?',
     ],
   },
   reputation: {
@@ -157,18 +157,18 @@ const SCREEN_GUIDES: Record<NavSection, ScreenGuide> = {
     ],
   },
   onboarding: {
-    title: 'Onboarding Inteligente, Administración y Escucha Social',
+    title: 'Onboarding Inteligente y Administración Confia360',
     purpose:
-      'Permite dar de alta nuevos clientes con su Ficha Única, gestionar módulos contratables y activar fuentes/Add-on de Escucha Social y notas de novedades con PIN de Asexia.',
+      'Permite dar de alta nuevos clientes y, bajo usuario Asexia + PIN en "Administración · Ficha y Confia360", gestionar la Ficha Maestra, precios por módulo, importe especial de cliente, fuentes y sincronización API Confia360.',
     steps: [
-      'En "Módulos y Escucha Social" introduce el PIN de Asexia para habilitar módulos, fuentes o el Add-on Social (Meta, TikTok, YouTube).',
-      'En "Publicar novedad" actualiza las notas informativas que verán los usuarios en cada módulo.',
+      'Desbloquea "Administración · Ficha y Confia360" con usuario Asexia y clave PIN para ver y editar la Ficha Única de Cliente e Integración Confia360.',
+      'En Control Maestro ajusta el precio de cada módulo, define un importe especial de cliente y edita suscripciones o pagos pendientes.',
       'En "Nuevo proyecto (IA)" da de alta un cliente capturando web, datos antialucinación y su Ficha Única.',
     ],
     quickQuestions: [
-      '¿Cómo doy de alta un nuevo cliente completo?',
-      '¿Cómo publico una nota de novedad para otro módulo?',
-      '¿Qué protege el PIN de Asexia en esta pantalla?',
+      '¿Cómo accedo a la Ficha de Cliente y a la Integración Confia360?',
+      '¿Dónde se cargan y modifican los módulos y sus precios?',
+      '¿Cómo aplico un importe especial para un cliente?',
     ],
   },
 };

@@ -4,10 +4,10 @@ dotenv.config();
 import crypto from 'crypto';
 import express from 'express';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
 import {
   ALL_REPUTATION_SOURCES,
   CORE_REPUTATION_SOURCES,
@@ -54,7 +54,26 @@ import type {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, 'data');
+
+function resolveDataDir(): string {
+  const configured = process.env.CONFIA_DATA_DIR?.trim();
+  const primary = configured || path.resolve(__dirname, 'data');
+  try {
+    if (!fs.existsSync(primary)) {
+      fs.mkdirSync(primary, { recursive: true });
+    }
+    fs.accessSync(primary, fs.constants.W_OK);
+    return primary;
+  } catch {
+    const fallback = path.resolve(os.tmpdir(), 'confia360-data');
+    if (!fs.existsSync(fallback)) {
+      fs.mkdirSync(fallback, { recursive: true });
+    }
+    return fallback;
+  }
+}
+
+const DATA_DIR = resolveDataDir();
 const STORE_PATH = path.resolve(DATA_DIR, 'store.json');
 const ADMIN_AUTH_PATH = path.resolve(DATA_DIR, 'admin-auth.json');
 
@@ -155,6 +174,24 @@ function requireAdminSession(
   if (!session) {
     res.status(401).json({
       error: 'Se requiere clave PIN de administrador (usuario Asexia) para modificar esta configuración.',
+    });
+    return null;
+  }
+  return session;
+}
+
+function requireAsexiaAdminSession(
+  req: express.Request,
+  res: express.Response
+): { token: string; username: string } | null {
+  const session = getValidAdminSession(req);
+  const record = ensureAdminAuth();
+  if (
+    !session ||
+    session.username.trim().toLowerCase() !== record.username.trim().toLowerCase()
+  ) {
+    res.status(401).json({
+      error: `Acceso restringido en Administración: inicia sesión como usuario "${record.username}" con su clave PIN.`,
     });
     return null;
   }
@@ -360,6 +397,36 @@ function ensureStore(): StoreState {
             country: updated.profile?.country,
           }),
         };
+      } else if (
+        !updated.clientMaster.modulePrices ||
+        updated.clientMaster.socialAddonPriceEur === undefined ||
+        updated.clientMaster.specialClientAmountEur === undefined ||
+        updated.clientMaster.specialClientAmountNote === undefined
+      ) {
+        migrated = true;
+        const plan = updated.plan || 'Growth';
+        const fallbackCm = createDefaultClientMaster({
+          companyName: updated.profile?.companyName || updated.name || 'Cliente Confia360',
+          domain: updated.profile?.domain || 'https://asexia.es',
+          city: updated.profile?.primaryCity || 'Madrid',
+          sector: updated.profile?.sector || 'Consultoría Pyme',
+          plan,
+          enabledModules: updated.enabledModules,
+        });
+        updated = {
+          ...updated,
+          clientMaster: {
+            ...updated.clientMaster,
+            modulePrices: updated.clientMaster.modulePrices || fallbackCm.modulePrices,
+            socialAddonPriceEur:
+              updated.clientMaster.socialAddonPriceEur ?? fallbackCm.socialAddonPriceEur,
+            specialClientAmountEur:
+              updated.clientMaster.specialClientAmountEur !== undefined
+                ? updated.clientMaster.specialClientAmountEur
+                : null,
+            specialClientAmountNote: updated.clientMaster.specialClientAmountNote ?? '',
+          },
+        };
       }
       return updated;
     });
@@ -495,11 +562,24 @@ function propagateClientMasterToProject(project: ProjectWorkspace): void {
       gbpDir.detectedAddress = `${cm.fiscalAddress}, ${cm.postalCode} ${cm.city}`.trim();
     }
   }
-  const enabledCount = (project.enabledModules || []).length;
+  const activeModules = project.enabledModules || ['reputacion_local', 'seo_geo', 'campanas'];
+  const enabledCount = activeModules.length;
   const socialText = project.socialListeningAddonEnabled ? ' + Escucha Social' : '';
+  const prices = cm.modulePrices || { reputacion_local: 59, seo_geo: 79, campanas: 49 };
+  const standardTotal =
+    activeModules.reduce((acc, m) => acc + Math.max(0, Number(prices[m]) || 0), 0) +
+    (project.socialListeningAddonEnabled ? Math.max(0, Number(cm.socialAddonPriceEur) || 0) : 0);
+  const effectiveMonthly =
+    cm.specialClientAmountEur !== null && cm.specialClientAmountEur !== undefined
+      ? Math.max(0, Number(cm.specialClientAmountEur) || 0)
+      : standardTotal;
+  const tariffText =
+    cm.specialClientAmountEur !== null && cm.specialClientAmountEur !== undefined
+      ? `Tarifa especial ${effectiveMonthly.toFixed(2)}€/mes (base ${standardTotal.toFixed(2)}€)`
+      : `${effectiveMonthly.toFixed(2)}€/mes`;
   cm.confiaSync = {
     ...cm.confiaSync,
-    syncedModulesSummary: `${enabledCount} módulos base + Ficha Única${socialText} + Tutor Gemini`,
+    syncedModulesSummary: `${enabledCount} módulos base + Ficha Única${socialText} · ${tariffText}`,
     priorityMode: 'Ficha Maestra Prioritaria',
   };
 }
@@ -881,6 +961,9 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
   // =========================================================================
 
   app.patch('/api/projects/:id/client-master', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const project = store.projects.find((p) => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
@@ -908,9 +991,47 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
         enabledModules: project.enabledModules,
       });
 
+    const sanitizedModulePrices: Record<ConfiaModuleId, number> = {
+      reputacion_local: Math.max(
+        0,
+        Number(
+          cmUpdates?.modulePrices?.reputacion_local ?? currentCm.modulePrices?.reputacion_local ?? 49
+        ) || 0
+      ),
+      seo_geo: Math.max(
+        0,
+        Number(cmUpdates?.modulePrices?.seo_geo ?? currentCm.modulePrices?.seo_geo ?? 50) || 0
+      ),
+      campanas: Math.max(
+        0,
+        Number(cmUpdates?.modulePrices?.campanas ?? currentCm.modulePrices?.campanas ?? 30) || 0
+      ),
+    };
+
+    const nextSocialAddonPrice =
+      cmUpdates?.socialAddonPriceEur !== undefined
+        ? Math.max(0, Number(cmUpdates.socialAddonPriceEur) || 0)
+        : currentCm.socialAddonPriceEur ?? 39;
+
+    const nextSpecialAmount =
+      cmUpdates && 'specialClientAmountEur' in cmUpdates
+        ? cmUpdates.specialClientAmountEur === null ||
+          cmUpdates.specialClientAmountEur === undefined ||
+          Number.isNaN(Number(cmUpdates.specialClientAmountEur))
+          ? null
+          : Math.max(0, Number(cmUpdates.specialClientAmountEur))
+        : currentCm.specialClientAmountEur ?? null;
+
     project.clientMaster = {
       ...currentCm,
       ...cmUpdates,
+      modulePrices: sanitizedModulePrices,
+      socialAddonPriceEur: nextSocialAddonPrice,
+      specialClientAmountEur: nextSpecialAmount,
+      specialClientAmountNote:
+        cmUpdates?.specialClientAmountNote !== undefined
+          ? cmUpdates.specialClientAmountNote
+          : currentCm.specialClientAmountNote ?? '',
       confiaSync: {
         ...currentCm.confiaSync,
         ...(cmUpdates?.confiaSync || {}),
@@ -941,17 +1062,22 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     project.auditLogs.unshift({
       id: `log-${Date.now()}`,
       timestamp: nowStamp(),
-      actor: `Ficha Maestra (${store.activeRole})`,
+      actor: `Admin ${session.username}`,
       role: store.activeRole,
-      module: 'Ficha Única Confia360',
-      action: 'Datos maestros y configuración propagados',
-      detail: `Actualizada ficha "${project.clientMaster.commercialName}" (${project.clientMaster.taxId}) con prioridad en todos los módulos Confia360.`,
+      module: 'Control Maestro Confia360',
+      action: 'Ficha Única y tarifas actualizadas',
+      detail: `Actualizada ficha "${project.clientMaster.commercialName}" (${project.clientMaster.taxId})${
+        nextSpecialAmount !== null ? ` · Importe especial cliente: ${nextSpecialAmount.toFixed(2)} €/mes` : ''
+      }.`,
     });
     saveStore(store);
     res.json(store);
   });
 
   app.post('/api/projects/:id/client-master/subscriptions', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const project = store.projects.find((p) => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Proyecto no encontrado.' });
@@ -990,7 +1116,7 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     project.auditLogs.unshift({
       id: `log-${Date.now()}`,
       timestamp: nowStamp(),
-      actor: `Facturación (${store.activeRole})`,
+      actor: `Admin ${session.username}`,
       role: store.activeRole,
       module: 'Ficha Única · Suscripciones',
       action: `Suscripción añadida: ${sub.planName}`,
@@ -1001,6 +1127,9 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
   });
 
   app.patch('/api/projects/:id/client-master/subscriptions/:subId', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const project = store.projects.find((p) => p.id === req.params.id);
     if (!project || !project.clientMaster) {
@@ -1010,22 +1139,60 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     if (!sub) return res.status(404).json({ error: 'Suscripción no encontrada.' });
 
     const updates = req.body as Partial<ClientSubscriptionItem>;
+    if (updates.amountEur !== undefined) {
+      updates.amountEur = Math.max(0, Number(updates.amountEur) || 0);
+    }
+    if (updates.planName !== undefined) {
+      updates.planName = updates.planName.trim() || sub.planName;
+    }
     Object.assign(sub, updates);
     propagateClientMasterToProject(project);
     project.auditLogs.unshift({
       id: `log-${Date.now()}`,
       timestamp: nowStamp(),
-      actor: `Facturación (${store.activeRole})`,
+      actor: `Admin ${session.username}`,
       role: store.activeRole,
       module: 'Ficha Única · Suscripciones',
       action: `Suscripción actualizada: ${sub.planName}`,
-      detail: `Estado: ${sub.status} · Importe: ${sub.amountEur} €.`,
+      detail: `Estado: ${sub.status} · Importe: ${sub.amountEur} € (${sub.billingCycle}).`,
+    });
+    saveStore(store);
+    res.json(store);
+  });
+
+  app.delete('/api/projects/:id/client-master/subscriptions/:subId', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
+    const store = ensureStore();
+    const project = store.projects.find((p) => p.id === req.params.id);
+    if (!project || !project.clientMaster) {
+      return res.status(404).json({ error: 'Cliente no encontrado.' });
+    }
+    const target = project.clientMaster.subscriptions.find((s) => s.id === req.params.subId);
+    if (!target) return res.status(404).json({ error: 'Suscripción no encontrada.' });
+
+    project.clientMaster.subscriptions = project.clientMaster.subscriptions.filter(
+      (s) => s.id !== req.params.subId
+    );
+    propagateClientMasterToProject(project);
+    project.auditLogs.unshift({
+      id: `log-${Date.now()}`,
+      timestamp: nowStamp(),
+      actor: `Admin ${session.username}`,
+      role: store.activeRole,
+      module: 'Ficha Única · Suscripciones',
+      action: `Suscripción eliminada: ${target.planName}`,
+      detail: `Importe anterior: ${target.amountEur} € (${target.billingCycle}).`,
     });
     saveStore(store);
     res.json(store);
   });
 
   app.post('/api/projects/:id/client-master/payments', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const project = store.projects.find((p) => p.id === req.params.id);
     if (!project || !project.clientMaster) {
@@ -1055,7 +1222,7 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     project.auditLogs.unshift({
       id: `log-${Date.now()}`,
       timestamp: nowStamp(),
-      actor: `Facturación (${store.activeRole})`,
+      actor: `Admin ${session.username}`,
       role: store.activeRole,
       module: 'Ficha Única · Pagos',
       action: `Registro de cobro (${payment.status})`,
@@ -1066,6 +1233,9 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
   });
 
   app.patch('/api/projects/:id/client-master/payments/:paymentId', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const project = store.projects.find((p) => p.id === req.params.id);
     if (!project || !project.clientMaster) {
@@ -1075,6 +1245,9 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     if (!pay) return res.status(404).json({ error: 'Pago no encontrado.' });
 
     const updates = req.body as Partial<ClientPaymentRecord>;
+    if (updates.amountEur !== undefined) {
+      updates.amountEur = Math.max(0, Number(updates.amountEur) || 0);
+    }
     if (updates.status === 'Pagado' && !updates.paidAt) {
       updates.paidAt = nowStamp().split(' ')[0];
     } else if (updates.status && updates.status !== 'Pagado') {
@@ -1086,17 +1259,20 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     project.auditLogs.unshift({
       id: `log-${Date.now()}`,
       timestamp: nowStamp(),
-      actor: `Facturación (${store.activeRole})`,
+      actor: `Admin ${session.username}`,
       role: store.activeRole,
       module: 'Ficha Única · Pagos',
       action: `Pago ${pay.invoiceNumber}: ${pay.status}`,
-      detail: `${pay.concept} (${pay.amountEur} €) actualizado a ${pay.status}.`,
+      detail: `${pay.concept} (${pay.amountEur} € · Vto: ${pay.dueDate}) actualizado.`,
     });
     saveStore(store);
     res.json(store);
   });
 
   app.delete('/api/projects/:id/client-master/payments/:paymentId', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const project = store.projects.find((p) => p.id === req.params.id);
     if (!project || !project.clientMaster) {
@@ -1109,11 +1285,23 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
       (p) => p.id !== req.params.paymentId
     );
     project.clientMaster.updatedAt = nowStamp();
+    project.auditLogs.unshift({
+      id: `log-${Date.now()}`,
+      timestamp: nowStamp(),
+      actor: `Admin ${session.username}`,
+      role: store.activeRole,
+      module: 'Ficha Única · Pagos',
+      action: `Movimiento eliminado (${target.invoiceNumber})`,
+      detail: `${target.concept} (${target.amountEur} €) eliminado por ${session.username}.`,
+    });
     saveStore(store);
     res.json(store);
   });
 
   app.post('/api/confia360/client-sync', async (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const { projectId, direction } = req.body as {
       projectId: string;
@@ -1146,17 +1334,21 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (externalApiKey) headers.Authorization = `Bearer ${externalApiKey}`;
         const extRes = await fetch(externalApiUrl, {
-          method: 'POST',
+          method: direction === 'pull' ? 'GET' : 'POST',
           headers,
-          body: JSON.stringify({
-            event: 'client_master.sync',
-            direction: syncDir,
-            priorityMode: 'Ficha Maestra Prioritaria',
-            clientMaster: project.clientMaster,
-            enabledModules: project.enabledModules,
-            socialListeningAddonEnabled: project.socialListeningAddonEnabled,
-            enabledReputationSources: project.enabledReputationSources || [],
-          }),
+          ...(direction === 'pull'
+            ? {}
+            : {
+                body: JSON.stringify({
+                  event: 'client_master.sync',
+                  direction: syncDir,
+                  priorityMode: 'Ficha Maestra Prioritaria',
+                  clientMaster: project.clientMaster,
+                  enabledModules: project.enabledModules,
+                  socialListeningAddonEnabled: project.socialListeningAddonEnabled,
+                  enabledReputationSources: project.enabledReputationSources || [],
+                }),
+              }),
         });
         if (!extRes.ok) {
           project.clientMaster.confiaSync.syncStatus = 'Error';
@@ -1164,6 +1356,21 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
           return res.status(502).json({
             error: `La API externa de Confia360 respondió con estado ${extRes.status}.`,
           });
+        }
+        if (direction === 'pull' || direction === 'bidirectional') {
+          try {
+            const remoteData = (await extRes.json()) as {
+              clientMaster?: Partial<ClientMasterRecord>;
+            };
+            if (remoteData?.clientMaster) {
+              project.clientMaster = {
+                ...project.clientMaster,
+                ...remoteData.clientMaster,
+              };
+            }
+          } catch {
+            // Non-JSON response ignored cleanly
+          }
         }
         remoteSyncMode = 'API Externa Confia360';
       } catch (err) {
@@ -1197,7 +1404,7 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     project.auditLogs.unshift({
       id: `log-${Date.now()}`,
       timestamp: stamp,
-      actor: `API Sync Confia360 (${store.activeRole})`,
+      actor: `API Sync Confia360 (${session.username})`,
       role: store.activeRole,
       module: 'Integración Confia360',
       action: `Sincronización ${syncDir} completada`,
@@ -1212,15 +1419,16 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura exacta:
     res.json({
       ecosystem: 'Confia360',
       provider: 'AxesIA',
-      version: '2.4.0',
+      version: '2.5.0',
       prioritySourceOfTruth: 'clientMaster',
       modules: [
         {
           id: 'client_master',
-          name: 'Ficha Única de Cliente y Cuadro de Control',
-          route: '/?section=client',
+          name: 'Control Maestro de Cliente (Administración Asexia)',
+          route: '/?section=onboarding&tab=ecosystem',
           capabilities: [
             'Identificación fiscal',
+            'Precios por módulo e importe especial cliente',
             'Suscripciones y pagos pendientes',
             'Propagación prioritaria',
             'Sincronización API bidireccional',
@@ -2298,6 +2506,9 @@ Tono: ${project.profile.brandTone}.`,
   });
 
   app.post('/api/ecosystem/sync', (req, res) => {
+    const session = requireAsexiaAdminSession(req, res);
+    if (!session) return;
+
     const store = ensureStore();
     const { projectId, bridgeId, toggleOnly } = req.body as {
       projectId: string;
@@ -3593,7 +3804,7 @@ Regla: no expongas datos personales privados en la respuesta pública; si es una
   });
 
   app.post('/api/ecosystem/modules', (req, res) => {
-    const session = requireAdminSession(req, res);
+    const session = requireAsexiaAdminSession(req, res);
     if (!session) return;
 
     const store = ensureStore();
@@ -3610,6 +3821,7 @@ Regla: no expongas datos personales privados en la respuesta pública; si es una
       return res.status(400).json({ error: 'Debe permanecer al menos 1 módulo activo en Confia360.' });
     }
     project.enabledModules = Array.from(new Set(valid));
+    propagateClientMasterToProject(project);
     project.auditLogs.unshift({
       id: `log-${Date.now()}`,
       timestamp: nowStamp(),
@@ -4197,6 +4409,7 @@ Devuelve JSON con hasta 3 patrones concretos: { topPatterns: [{ theme, count, re
   });
 
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -4261,7 +4474,7 @@ export class ErrorOverlay extends BaseElement {}
     });
   }
 
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`confia360 seo-geo running on http://0.0.0.0:${PORT}`);
   });

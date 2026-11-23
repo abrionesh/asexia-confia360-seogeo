@@ -632,6 +632,10 @@ export interface ClientMasterRecord {
   lastReviewDate: string;
   nextReviewDate: string;
   notes: string;
+  modulePrices: Record<ConfiaModuleId, number>;
+  socialAddonPriceEur: number;
+  specialClientAmountEur: number | null;
+  specialClientAmountNote: string;
   subscriptions: ClientSubscriptionItem[];
   payments: ClientPaymentRecord[];
   notificationEmail: string;

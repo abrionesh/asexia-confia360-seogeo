@@ -19,9 +19,14 @@ import type { NavSection, ProjectWorkspace } from '../types';
 interface Props {
   project: ProjectWorkspace;
   onNavigate: (section: NavSection) => void;
+  onOpenAdminClient?: () => void;
 }
 
-export const ExecutiveDashboard: React.FC<Props> = ({ project, onNavigate }) => {
+export const ExecutiveDashboard: React.FC<Props> = ({
+  project,
+  onNavigate,
+  onOpenAdminClient,
+}) => {
   const [range, setRange] = useState<'3m' | '6m'>('6m');
   const [postalFilter, setPostalFilter] = useState('');
 
@@ -256,9 +261,17 @@ export const ExecutiveDashboard: React.FC<Props> = ({ project, onNavigate }) => 
               </span>
             </div>
             <div className="tabular-nums">
-              <span className="text-slate-500">Cuota activa: </span>
+              <span className="text-slate-500">
+                {cm.specialClientAmountEur !== null && cm.specialClientAmountEur !== undefined
+                  ? 'Tarifa especial cliente: '
+                  : 'Cuota activa: '}
+              </span>
               <span className="font-mono font-semibold text-slate-900">
-                {activeSubsMrr.toFixed(0)} €/mes
+                {(cm.specialClientAmountEur !== null && cm.specialClientAmountEur !== undefined
+                  ? cm.specialClientAmountEur
+                  : activeSubsMrr
+                ).toFixed(2)}{' '}
+                €/mes
               </span>
             </div>
             <div className="flex items-center gap-1.5 tabular-nums">
@@ -283,10 +296,10 @@ export const ExecutiveDashboard: React.FC<Props> = ({ project, onNavigate }) => 
 
           <button
             type="button"
-            onClick={() => onNavigate('client')}
+            onClick={() => (onOpenAdminClient ? onOpenAdminClient() : onNavigate('onboarding'))}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-slate-100 whitespace-nowrap shrink-0"
           >
-            <span>Abrir Ficha Única de Cliente →</span>
+            <span>Gestionar Ficha en Administración (Asexia) →</span>
           </button>
         </div>
       )}

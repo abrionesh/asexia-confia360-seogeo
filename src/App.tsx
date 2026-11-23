@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   BarChart3,
-  Briefcase,
   CalendarDays,
   FileEdit,
   Globe2,
@@ -19,7 +18,6 @@ import {
   X,
 } from 'lucide-react';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
-import { ClientMasterRecordView } from './components/ClientMasterRecordView';
 import { GeoGridView } from './components/GeoGridView';
 import { GeoAIMonitorView } from './components/GeoAIMonitorView';
 import { ContentStrategyView } from './components/ContentStrategyView';
@@ -70,7 +68,6 @@ const NAV_ITEMS: {
   module?: ConfiaModuleId;
 }[] = [
   { id: 'dashboard', label: 'Resumen y ROI', icon: BarChart3 },
-  { id: 'client', label: 'Ficha de Cliente Confia360', icon: Briefcase },
   { id: 'reputation', label: 'ReputaciónLocal y GBP', icon: MessageSquare, module: 'reputacion_local' },
   { id: 'geogrid', label: 'Mapa Geo-Grid', icon: MapPin, module: 'seo_geo' },
   { id: 'geo-ai', label: 'Monitor GEO (IAs)', icon: Sparkles, module: 'seo_geo' },
@@ -296,24 +293,34 @@ export default function App() {
     invitationConfigUpdates?: Partial<InvitationWebhookConfig>;
   }) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch(`/api/projects/${activeProject.id}/client-master`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error guardando la Ficha Única de Cliente.');
+    if (res.status === 401) clearExpiredAdmin();
+    if (!res.ok) throw new Error(data.error || 'Error guardando la Ficha Maestra.');
     setStore(data);
   };
 
   const handleAddSubscription = async (payload: Partial<ClientSubscriptionItem>) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch(`/api/projects/${activeProject.id}/client-master/subscriptions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    if (res.status === 401) clearExpiredAdmin();
     if (!res.ok) throw new Error(data.error || 'Error añadiendo suscripción.');
     setStore(data);
   };
@@ -323,27 +330,55 @@ export default function App() {
     updates: Partial<ClientSubscriptionItem>
   ) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch(
       `/api/projects/${activeProject.id}/client-master/subscriptions/${subId}`,
       {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
         body: JSON.stringify(updates),
       }
     );
     const data = await res.json();
+    if (res.status === 401) clearExpiredAdmin();
     if (!res.ok) throw new Error(data.error || 'Error actualizando suscripción.');
+    setStore(data);
+  };
+
+  const handleDeleteSubscription = async (subId: string) => {
+    if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
+    const res = await fetch(
+      `/api/projects/${activeProject.id}/client-master/subscriptions/${subId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+        },
+      }
+    );
+    const data = await res.json();
+    if (res.status === 401) clearExpiredAdmin();
+    if (!res.ok) throw new Error(data.error || 'Error eliminando suscripción.');
     setStore(data);
   };
 
   const handleAddPayment = async (payload: Partial<ClientPaymentRecord>) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch(`/api/projects/${activeProject.id}/client-master/payments`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    if (res.status === 401) clearExpiredAdmin();
     if (!res.ok) throw new Error(data.error || 'Error registrando pago o vencimiento.');
     setStore(data);
   };
@@ -353,28 +388,38 @@ export default function App() {
     updates: Partial<ClientPaymentRecord>
   ) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch(
       `/api/projects/${activeProject.id}/client-master/payments/${paymentId}`,
       {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
         body: JSON.stringify(updates),
       }
     );
     const data = await res.json();
+    if (res.status === 401) clearExpiredAdmin();
     if (!res.ok) throw new Error(data.error || 'Error actualizando pago.');
     setStore(data);
   };
 
   const handleDeletePayment = async (paymentId: string) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch(
       `/api/projects/${activeProject.id}/client-master/payments/${paymentId}`,
       {
         method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+        },
       }
     );
     const data = await res.json();
+    if (res.status === 401) clearExpiredAdmin();
     if (!res.ok) throw new Error(data.error || 'Error eliminando pago.');
     setStore(data);
   };
@@ -383,13 +428,18 @@ export default function App() {
     direction: 'push' | 'pull' | 'bidirectional' = 'bidirectional'
   ) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch('/api/confia360/client-sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
       body: JSON.stringify({ projectId: activeProject.id, direction }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error sincronizando Ficha Única con Confia360.');
+    if (res.status === 401) clearExpiredAdmin();
+    if (!res.ok) throw new Error(data.error || 'Error sincronizando Ficha Maestra con Confia360.');
     setStore(data.store || data);
   };
 
@@ -465,12 +515,17 @@ export default function App() {
     toggleOnly = false
   ) => {
     if (!activeProject) return;
+    if (!adminToken) throw new Error('Inicia sesión como Asexia con su PIN en Administración.');
     const res = await fetch('/api/ecosystem/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
       body: JSON.stringify({ projectId: activeProject.id, bridgeId, toggleOnly }),
     });
     const data = await res.json();
+    if (res.status === 401) clearExpiredAdmin();
     if (!res.ok) throw new Error(data.error || 'Error sincronizando con Confia360.');
     setStore(data);
   };
@@ -1145,7 +1200,7 @@ export default function App() {
                   : 'text-slate-400'
               }`}
             />
-            <span className="truncate">Integración Confia360</span>
+            <span className="truncate">Administración Confia360</span>
           </button>
         </nav>
       </div>
@@ -1266,20 +1321,10 @@ export default function App() {
             onOpenTutor={() => setTutorOpen(true)}
           />
           {effectiveSection === 'dashboard' && (
-            <ExecutiveDashboard project={activeProject} onNavigate={setSection} />
-          )}
-          {effectiveSection === 'client' && (
-            <ClientMasterRecordView
+            <ExecutiveDashboard
               project={activeProject}
-              adminStatus={adminStatus}
-              onSaveClientMaster={handleSaveClientMaster}
-              onAddSubscription={handleAddSubscription}
-              onUpdateSubscription={handleUpdateSubscription}
-              onAddPayment={handleAddPayment}
-              onUpdatePayment={handleUpdatePayment}
-              onDeletePayment={handleDeletePayment}
-              onSyncConfia360={handleSyncConfia360}
-              onNavigateToAdmin={() => {
+              onNavigate={setSection}
+              onOpenAdminClient={() => {
                 setOnboardingTab('ecosystem');
                 setSection('onboarding');
               }}
@@ -1378,11 +1423,11 @@ export default function App() {
               onFixDirectory={handleFixDirectory}
             />
           )}
-          {effectiveSection === 'onboarding' && (
+          {(effectiveSection === 'onboarding' || effectiveSection === 'client') && (
             <OnboardingAuditView
-              key={`${activeProject.id}-${onboardingTab}`}
+              key={`${activeProject.id}-${effectiveSection === 'client' ? 'ecosystem' : onboardingTab}`}
               project={activeProject}
-              initialTab={onboardingTab}
+              initialTab={effectiveSection === 'client' ? 'ecosystem' : onboardingTab}
               adminStatus={adminStatus}
               releaseNotes={store.releaseNotes || []}
               onAdminUnlock={handleAdminUnlock}
@@ -1399,7 +1444,18 @@ export default function App() {
               onCreateReleaseNote={handleCreateReleaseNote}
               onUpdateReleaseNote={handleUpdateReleaseNote}
               onDeleteReleaseNote={handleDeleteReleaseNote}
-              onNavigateToClientMaster={() => setSection('client')}
+              onSaveClientMaster={handleSaveClientMaster}
+              onAddSubscription={handleAddSubscription}
+              onUpdateSubscription={handleUpdateSubscription}
+              onDeleteSubscription={handleDeleteSubscription}
+              onAddPayment={handleAddPayment}
+              onUpdatePayment={handleUpdatePayment}
+              onDeletePayment={handleDeletePayment}
+              onSyncConfia360={handleSyncConfia360}
+              onNavigateToClientMaster={() => {
+                setOnboardingTab('ecosystem');
+                setSection('onboarding');
+              }}
             />
           )}
         </main>

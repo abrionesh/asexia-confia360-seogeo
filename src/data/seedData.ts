@@ -1,4 +1,4 @@
-import {
+import type {
   CalendarEvent,
   CatalogItem,
   ClientMasterRecord,
@@ -23,7 +23,7 @@ import {
   SeasonalAction,
   StoreState,
   WeatherSnapshot,
-} from '../types';
+} from '../types.ts';
 
 export const CORE_REPUTATION_SOURCES: ReputationSourcePlatform[] = [
   'Google Business Profile',
@@ -166,7 +166,15 @@ export function createDefaultClientMaster(params: {
     lastReviewDate: '2026-11-15',
     nextReviewDate: '2026-12-15',
     notes:
-      'Ficha Única de Cliente con prioridad maestra en Confia360. Cualquier edición de identificación, módulos, cobros o políticas se propaga automáticamente al resto de vistas y conectores.',
+      'Ficha Única de Cliente con prioridad maestra en Confia360. Cualquier edición de identificación, módulos, precios, importe especial, cobros o políticas se propaga automáticamente al resto de vistas y conectores.',
+    modulePrices: {
+      reputacion_local: plan === 'Enterprise' ? 160 : plan === 'Agency' ? 99 : plan === 'Growth' ? 49 : 25,
+      seo_geo: plan === 'Enterprise' ? 190 : plan === 'Agency' ? 120 : plan === 'Growth' ? 50 : 24,
+      campanas: plan === 'Enterprise' ? 140 : plan === 'Agency' ? 80 : plan === 'Growth' ? 30 : 0,
+    },
+    socialAddonPriceEur: 39,
+    specialClientAmountEur: null,
+    specialClientAmountNote: '',
     subscriptions: [
       {
         id: `sub-base-${codeSuffix.toLowerCase()}`,
@@ -245,12 +253,12 @@ export const DEFAULT_RELEASE_NOTES: ModuleReleaseNote[] = [
   {
     id: 'rn-ficha-confia360',
     version: 'v2.4',
-    title: 'Nueva Ficha Única de Cliente Confia360 con Cuadro de Control Visual',
+    title: 'Control Maestro de Cliente e Integración Confia360 bajo PIN Asexia',
     summary:
-      'Centraliza identificación fiscal, suscripciones en curso, fechas de pagos pendientes y configuración global propagada con prioridad a todos los módulos.',
+      'Centraliza en Administración precios por módulo, importe especial para clientes, suscripciones, pagos pendientes y sincronización bidireccional API Confia360.',
     details:
-      'Ahora puedes consultar el cuadro de control financiero y contractual, registrar o liquidar pagos pendientes, editar datos maestros del cliente y lanzar la sincronización API bidireccional con el ecosistema Confia360 desde una sola pantalla.',
-    modules: ['client', 'dashboard', 'onboarding'],
+      'Desbloquea Administración Confia360 con el usuario Asexia y su clave PIN para editar cualquier campo de la Ficha Maestra, ajustar precios de módulos o aplicar tarifas especiales de cliente con sincronización inmediata.',
+    modules: ['dashboard', 'onboarding'],
     category: 'Nueva función',
     publishedAt: '2026-11-21',
     publishedBy: 'Admin Asexia',

@@ -14,6 +14,9 @@ import {
   AdminReleaseNotesPanel,
 } from './AdminReleaseNotesPanel';
 import {
+  ClientMasterControlView,
+} from './ClientMasterControlView';
+import {
   ReputationSourcesAdminPanel,
   type CreateReputationSourcePayload,
   type UpdateReputationSourcePayload,
@@ -22,12 +25,17 @@ import type {
   AdminLockStatus,
   BrandProfile,
   ClientAccountStatus,
+  ClientMasterRecord,
+  ClientPaymentRecord,
+  ClientSubscriptionItem,
   ConfiaModuleId,
   EcosystemBridgeItem,
+  InvitationWebhookConfig,
   ModuleReleaseNote,
   ProjectWorkspace,
   ReleaseNoteModuleTarget,
   ReputationSourcePlatform,
+  ReviewAutomationPolicy,
 } from '../types';
 
 interface OnboardingAnalysis {
@@ -116,6 +124,25 @@ interface Props {
     updates: Partial<ModuleReleaseNote>
   ) => Promise<void>;
   onDeleteReleaseNote: (noteId: string) => Promise<void>;
+  onSaveClientMaster: (payload: {
+    clientMaster?: Partial<ClientMasterRecord>;
+    profileUpdates?: Partial<BrandProfile>;
+    reviewPolicyUpdates?: Partial<ReviewAutomationPolicy>;
+    invitationConfigUpdates?: Partial<InvitationWebhookConfig>;
+  }) => Promise<void>;
+  onAddSubscription: (payload: Partial<ClientSubscriptionItem>) => Promise<void>;
+  onUpdateSubscription: (
+    subId: string,
+    updates: Partial<ClientSubscriptionItem>
+  ) => Promise<void>;
+  onDeleteSubscription: (subId: string) => Promise<void>;
+  onAddPayment: (payload: Partial<ClientPaymentRecord>) => Promise<void>;
+  onUpdatePayment: (
+    paymentId: string,
+    updates: Partial<ClientPaymentRecord>
+  ) => Promise<void>;
+  onDeletePayment: (paymentId: string) => Promise<void>;
+  onSyncConfia360: (direction?: 'push' | 'pull' | 'bidirectional') => Promise<void>;
   onNavigateToClientMaster?: () => void;
 }
 
@@ -138,6 +165,14 @@ export const OnboardingAuditView: React.FC<Props> = ({
   onCreateReleaseNote,
   onUpdateReleaseNote,
   onDeleteReleaseNote,
+  onSaveClientMaster,
+  onAddSubscription,
+  onUpdateSubscription,
+  onDeleteSubscription,
+  onAddPayment,
+  onUpdatePayment,
+  onDeletePayment,
+  onSyncConfia360,
   onNavigateToClientMaster,
 }) => {
   const [subTab, setSubTab] = useState<
@@ -330,7 +365,7 @@ export const OnboardingAuditView: React.FC<Props> = ({
 
         <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1">
           {[
-            { id: 'ecosystem', label: 'Módulos y Escucha Social' },
+            { id: 'ecosystem', label: 'Administración · Ficha y Confia360' },
             { id: 'onboarding', label: 'Nuevo proyecto (IA)' },
             { id: 'profile', label: 'Perfil de negocio' },
             { id: 'audit', label: `Auditoría (${project.auditLogs.length})` },
@@ -749,15 +784,19 @@ export const OnboardingAuditView: React.FC<Props> = ({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              {onNavigateToClientMaster && (
-                <button
-                  type="button"
-                  onClick={onNavigateToClientMaster}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-slate-100 whitespace-nowrap"
-                >
-                  Editar en Ficha Única Confia360 →
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onNavigateToClientMaster) {
+                    onNavigateToClientMaster();
+                  } else {
+                    setSubTab('ecosystem');
+                  }
+                }}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-slate-100 whitespace-nowrap"
+              >
+                Abrir Control Maestro en Administración (PIN) →
+              </button>
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 whitespace-nowrap">
                 <Shield className="h-4 w-4" /> RGPD Activo
               </span>
@@ -921,517 +960,578 @@ export const OnboardingAuditView: React.FC<Props> = ({
         </div>
       )}
 
-      {subTab === 'ecosystem' && (
-        <div className="space-y-6">
-          <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
-              <div>
-                <p className="text-xs font-medium text-blue-700">
-                  Arquitectura Modular Comercial · AxesIA · Suite Confia360
-                </p>
-                <h2 className="mt-1 text-lg font-bold text-slate-900">
-                  Módulos Contratables e Interconexión Automática
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Comercializa cada módulo por separado según la necesidad de la pyme o actívalos juntos para compartir alertas, campañas y calendario en tiempo real.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-                <Layers className="h-4 w-4 text-blue-700" />
-                <span className="font-mono tabular-nums">
-                  {(project.enabledModules || ['reputacion_local', 'seo_geo', 'campanas']).length}/3 módulos activos
-                </span>
-              </div>
-            </div>
+      {subTab === 'ecosystem' && (() => {
+        const isAsexiaAdmin =
+          adminStatus.unlocked && adminStatus.username.trim().toLowerCase() === 'asexia';
 
-            {error && (
-              <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-800">
-                {error}
+        return (
+          <div className="space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-white p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <p className="text-xs font-medium text-blue-700">
+                    Administración Exclusiva Asexia · Suite Confia360
+                  </p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-900">
+                    Control Maestro de Cliente, Módulos e Integración Confia360
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Acceso restringido al usuario administrador <strong>Asexia</strong> con su PIN para gestionar Ficha Maestra, tarifas especiales de cliente, módulos contratados, fuentes de reputación y sincronización API bidireccional con Confia360.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <Layers className="h-4 w-4 text-blue-700" />
+                  <span className="font-mono tabular-nums">
+                    {(project.enabledModules || ['reputacion_local', 'seo_geo', 'campanas']).length}/3 módulos activos
+                  </span>
+                </div>
               </div>
-            )}
-            {savedNotice && (
-              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800">
-                {savedNotice}
-              </div>
-            )}
 
-            {/* Puerta de seguridad por PIN de Administrador */}
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-              {!adminStatus.unlocked ? (
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    setError(null);
-                    setSavedNotice(null);
-                    setSyncingId('admin-unlock');
-                    try {
-                      await onAdminUnlock(pinUsername, pinInput);
-                      setPinInput('');
-                      setSavedNotice(
-                        `Acceso de administración desbloqueado para ${pinUsername}.`
-                      );
-                    } catch (err) {
-                      setError(
-                        err instanceof Error ? err.message : 'No se pudo validar el PIN.'
-                      );
-                    } finally {
-                      setSyncingId(null);
-                    }
-                  }}
-                  className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-900">
-                      <Lock className="h-4 w-4 text-blue-700" />
-                      <span>Configuración protegida por clave PIN de acceso</span>
-                    </div>
-                    <p className="text-xs text-slate-600">
-                      Introduce las credenciales de administrador para activar módulos de Confia360 y seleccionar las fuentes de reseñas y críticas.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-slate-600">
-                        Usuario
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={pinUsername}
-                        onChange={(e) => setPinUsername(e.target.value)}
-                        placeholder="Asexia"
-                        className="w-32 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-slate-600">
-                        Clave PIN
-                      </label>
-                      <input
-                        type="password"
-                        inputMode="numeric"
-                        autoComplete="current-password"
-                        required
-                        value={pinInput}
-                        onChange={(e) => setPinInput(e.target.value)}
-                        placeholder="••••"
-                        className="w-28 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={syncingId !== null}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap shrink-0"
-                    >
-                      {syncingId === 'admin-unlock' ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Unlock className="h-3.5 w-3.5" />
-                      )}
-                      <span>Desbloquear acceso</span>
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-0.5 text-xs">
-                      <p className="flex items-center gap-2 font-semibold text-emerald-800">
-                        <Unlock className="h-4 w-4 text-emerald-700" />
-                        <span>
-                          Sesión de administración activa · Usuario: {adminStatus.username}
-                        </span>
-                      </p>
-                      <p className="text-slate-600">
-                        Credencial verificada en servidor mediante hash seguro
-                        {adminStatus.updatedAt ? ` · Actualizada: ${adminStatus.updatedAt}` : ''}
-                        {adminStatus.isDefaultPin
-                          ? ' · Recomendado personalizar el PIN inicial'
-                          : ''}
+              {error && (
+                <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-800">
+                  {error}
+                </div>
+              )}
+              {savedNotice && (
+                <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800">
+                  {savedNotice}
+                </div>
+              )}
+
+              {/* Puerta de seguridad exclusiva Asexia + PIN */}
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                {!isAsexiaAdmin ? (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setError(null);
+                      setSavedNotice(null);
+                      if (pinUsername.trim().toLowerCase() !== 'asexia') {
+                        setError(
+                          'Solo el usuario administrador "Asexia" con su PIN puede acceder a la Ficha de Cliente y la Integración Confia360.'
+                        );
+                        return;
+                      }
+                      setSyncingId('admin-unlock');
+                      try {
+                        await onAdminUnlock(pinUsername.trim(), pinInput);
+                        setPinInput('');
+                        setSavedNotice(
+                          `Administración desbloqueada para ${pinUsername.trim()}.`
+                        );
+                      } catch (err) {
+                        setError(
+                          err instanceof Error ? err.message : 'No se pudo validar el PIN.'
+                        );
+                      } finally {
+                        setSyncingId(null);
+                      }
+                    }}
+                    className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-900">
+                        <Lock className="h-4 w-4 text-blue-700" />
+                        <span>Panel protegido: Ficha Única de Cliente e Integración Confia360</span>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        Introduce usuario <strong>Asexia</strong> y su clave PIN para abrir el control maestro del cliente, editar precios por módulo, fijar importe especial y sincronizar con la API Confia360.
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {!adminStatus.envManaged && (
-                        <button
-                          type="button"
-                          onClick={() => setShowChangePin((v) => !v)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 whitespace-nowrap shrink-0"
-                        >
-                          <KeyRound className="h-3.5 w-3.5 text-blue-700" />
-                          <span>{showChangePin ? 'Cerrar cambio de PIN' : 'Cambiar PIN'}</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        disabled={syncingId !== null}
-                        onClick={async () => {
-                          setError(null);
-                          setSavedNotice(null);
-                          setSyncingId('admin-lock');
-                          try {
-                            await onAdminLock();
-                            setShowChangePin(false);
-                            setSavedNotice('Panel de administración bloqueado.');
-                          } finally {
-                            setSyncingId(null);
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap shrink-0"
-                      >
-                        <Lock className="h-3.5 w-3.5" />
-                        <span>Bloquear panel</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {showChangePin && !adminStatus.envManaged && (
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        setError(null);
-                        setSavedNotice(null);
-                        if (!/^\d{4,12}$/.test(newPinInput.trim())) {
-                          setError('El nuevo PIN debe tener entre 4 y 12 dígitos numéricos.');
-                          return;
-                        }
-                        if (newPinInput.trim() !== confirmPinInput.trim()) {
-                          setError('La confirmación del nuevo PIN no coincide.');
-                          return;
-                        }
-                        setSyncingId('change-pin');
-                        try {
-                          await onAdminChangePin(currentPinInput.trim(), newPinInput.trim());
-                          setCurrentPinInput('');
-                          setNewPinInput('');
-                          setConfirmPinInput('');
-                          setShowChangePin(false);
-                          setSavedNotice(
-                            'PIN de acceso actualizado y guardado de forma segura en el servidor.'
-                          );
-                        } catch (err) {
-                          setError(
-                            err instanceof Error ? err.message : 'No se pudo cambiar el PIN.'
-                          );
-                        } finally {
-                          setSyncingId(null);
-                        }
-                      }}
-                      className="grid grid-cols-1 gap-3 border-t border-slate-200 pt-3 sm:grid-cols-4 sm:items-end"
-                    >
+                    <div className="flex flex-wrap items-end gap-2">
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-slate-600">
-                          PIN actual
+                          Usuario Admin
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={pinUsername}
+                          onChange={(e) => setPinUsername(e.target.value)}
+                          placeholder="Asexia"
+                          className="w-32 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                          Clave PIN
                         </label>
                         <input
                           type="password"
                           inputMode="numeric"
+                          autoComplete="current-password"
                           required
-                          value={currentPinInput}
-                          onChange={(e) => setCurrentPinInput(e.target.value)}
+                          value={pinInput}
+                          onChange={(e) => setPinInput(e.target.value)}
                           placeholder="••••"
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[11px] font-medium text-slate-600">
-                          Nuevo PIN (4–12 dígitos)
-                        </label>
-                        <input
-                          type="password"
-                          inputMode="numeric"
-                          required
-                          value={newPinInput}
-                          onChange={(e) => setNewPinInput(e.target.value)}
-                          placeholder="Nuevo PIN"
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[11px] font-medium text-slate-600">
-                          Confirmar nuevo PIN
-                        </label>
-                        <input
-                          type="password"
-                          inputMode="numeric"
-                          required
-                          value={confirmPinInput}
-                          onChange={(e) => setConfirmPinInput(e.target.value)}
-                          placeholder="Repetir PIN"
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+                          className="w-28 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
                         />
                       </div>
                       <button
                         type="submit"
                         disabled={syncingId !== null}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50 whitespace-nowrap"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap shrink-0"
                       >
-                        {syncingId === 'change-pin' ? (
+                        {syncingId === 'admin-unlock' ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                          <KeyRound className="h-3.5 w-3.5" />
+                          <Unlock className="h-3.5 w-3.5" />
                         )}
-                        <span>Guardar nuevo PIN</span>
+                        <span>Desbloquear Administración</span>
                       </button>
-                    </form>
-                  )}
-                </div>
-              )}
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-0.5 text-xs">
+                        <p className="flex items-center gap-2 font-semibold text-emerald-800">
+                          <Unlock className="h-4 w-4 text-emerald-700" />
+                          <span>
+                            Sesión de administración activa · Usuario: {adminStatus.username}
+                          </span>
+                        </p>
+                        <p className="text-slate-600">
+                          Acceso completo habilitado a Ficha Maestra, tarifas especiales, módulos, fuentes y API Confia360
+                          {adminStatus.updatedAt ? ` · Actualizada: ${adminStatus.updatedAt}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!adminStatus.envManaged && (
+                          <button
+                            type="button"
+                            onClick={() => setShowChangePin((v) => !v)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 whitespace-nowrap shrink-0"
+                          >
+                            <KeyRound className="h-3.5 w-3.5 text-blue-700" />
+                            <span>{showChangePin ? 'Cerrar cambio de PIN' : 'Cambiar PIN'}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={syncingId !== null}
+                          onClick={async () => {
+                            setError(null);
+                            setSavedNotice(null);
+                            setSyncingId('admin-lock');
+                            try {
+                              await onAdminLock();
+                              setShowChangePin(false);
+                              setSavedNotice('Panel de administración bloqueado.');
+                            } finally {
+                              setSyncingId(null);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap shrink-0"
+                        >
+                          <Lock className="h-3.5 w-3.5" />
+                          <span>Bloquear panel</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {showChangePin && !adminStatus.envManaged && (
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          setError(null);
+                          setSavedNotice(null);
+                          if (!/^\d{4,12}$/.test(newPinInput.trim())) {
+                            setError('El nuevo PIN debe tener entre 4 y 12 dígitos numéricos.');
+                            return;
+                          }
+                          if (newPinInput.trim() !== confirmPinInput.trim()) {
+                            setError('La confirmación del nuevo PIN no coincide.');
+                            return;
+                          }
+                          setSyncingId('change-pin');
+                          try {
+                            await onAdminChangePin(currentPinInput.trim(), newPinInput.trim());
+                            setCurrentPinInput('');
+                            setNewPinInput('');
+                            setConfirmPinInput('');
+                            setShowChangePin(false);
+                            setSavedNotice(
+                              'PIN de acceso actualizado y guardado de forma segura en el servidor.'
+                            );
+                          } catch (err) {
+                            setError(
+                              err instanceof Error ? err.message : 'No se pudo cambiar el PIN.'
+                            );
+                          } finally {
+                            setSyncingId(null);
+                          }
+                        }}
+                        className="grid grid-cols-1 gap-3 border-t border-slate-200 pt-3 sm:grid-cols-4 sm:items-end"
+                      >
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                            PIN actual
+                          </label>
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            required
+                            value={currentPinInput}
+                            onChange={(e) => setCurrentPinInput(e.target.value)}
+                            placeholder="••••"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                            Nuevo PIN (4–12 dígitos)
+                          </label>
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            required
+                            value={newPinInput}
+                            onChange={(e) => setNewPinInput(e.target.value)}
+                            placeholder="Nuevo PIN"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-slate-600">
+                            Confirmar nuevo PIN
+                          </label>
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            required
+                            value={confirmPinInput}
+                            onChange={(e) => setConfirmPinInput(e.target.value)}
+                            placeholder="Repetir PIN"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={syncingId !== null}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {syncingId === 'change-pin' ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <KeyRound className="h-3.5 w-3.5" />
+                          )}
+                          <span>Guardar nuevo PIN</span>
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
-              {(
-                [
-                  {
-                    id: 'reputacion_local' as ConfiaModuleId,
-                    name: 'Confia360 ReputaciónLocal',
-                    sku: 'Módulo 01 · Visibilidad & Reseñas',
-                    pitch:
-                      'Ficha Google Business Profile, checklist de completitud, motor ético de invitaciones multicanal sin review gating, incidencias SLA y auditoría NAP en directorios.',
-                    synergy:
-                      'Si se combina con Campañas y SEO-GEO, convierte reseñas 5★ en creatividades sociales y actualiza landings locales.',
-                  },
-                  {
-                    id: 'seo_geo' as ConfiaModuleId,
-                    name: 'Confia360 SEO-GEO',
-                    sku: 'Módulo 02 · Maps & Respuestas IA',
-                    pitch:
-                      'Malla Geo-Grid por código postal, monitor de citas en ChatGPT/Gemini/Perplexity, previsiones SEO proactivas, auditoría técnica y backlinks éticos.',
-                    synergy:
-                      'Conecta caídas previstas en IAs directamente con el Calendario Estratégico y refuerza páginas en zonas débiles del Geo-Grid.',
-                  },
-                  {
-                    id: 'campanas' as ConfiaModuleId,
-                    name: 'Confia360 Campañas y Estacionalidad',
-                    sku: 'Módulo 03 · Demanda & Media',
-                    pitch:
-                      'Calendario comercial español, avisos proactivos por clima y stock en vivo, y generador multiformato para Meta Ads, TikTok y YouTube Shorts.',
-                    synergy:
-                      'Sincroniza eventos estacionales con publicaciones locales en GBP y promociones cuando hay excedente de catálogo.',
-                  },
-                ] as const
-              ).map((mod) => {
-                const currentModules = project.enabledModules || [
-                  'reputacion_local',
-                  'seo_geo',
-                  'campanas',
-                ];
-                const isActive = currentModules.includes(mod.id);
-                const isLastActive = isActive && currentModules.length <= 1;
-                return (
-                  <div
-                    key={mod.id}
-                    className={`rounded-xl border p-5 flex flex-col justify-between space-y-4 transition-colors ${
-                      isActive ? 'border-blue-200 bg-blue-50/30' : 'border-slate-200 bg-slate-50/60'
-                    }`}
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-mono text-[11px] font-medium text-slate-500">
-                          {mod.sku}
-                        </span>
-                        <span
-                          className={`font-semibold ${
-                            isActive ? 'text-emerald-700' : 'text-slate-500'
-                          }`}
-                        >
-                          {isActive ? 'Activo' : 'Desactivado'}
-                        </span>
-                      </div>
-                      <h3 className="text-sm font-bold text-slate-900">{mod.name}</h3>
-                      <p className="text-xs leading-relaxed text-slate-600">{mod.pitch}</p>
-                      <p className="border-t border-slate-200/70 pt-2 text-[11px] leading-relaxed text-slate-500">
-                        Sinergia automática: {mod.synergy}
+            {!isAsexiaAdmin ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-8 text-center space-y-2">
+                <Lock className="mx-auto h-7 w-7 text-slate-400" />
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Ficha Única de Cliente e Integración Confia360 Bloqueadas
+                </h3>
+                <p className="mx-auto max-w-xl text-xs leading-relaxed text-slate-600">
+                  Por seguridad comercial, los datos fiscales, importes de suscripciones, precios por módulo, tarifa especial de cliente, fuentes de escucha social y conectores API Confia360 solo se muestran al desbloquear esta sección con el usuario <strong>Asexia</strong> y su clave PIN.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* 1. CONTROL MAESTRO DE CLIENTE (FICHA + PRECIOS + IMPORTE ESPECIAL + SYNC BIDIRECCIONAL) */}
+                <ClientMasterControlView
+                  project={project}
+                  adminStatus={adminStatus}
+                  onSaveClientMaster={onSaveClientMaster}
+                  onToggleModules={onToggleModules}
+                  onAddSubscription={onAddSubscription}
+                  onUpdateSubscription={onUpdateSubscription}
+                  onDeleteSubscription={onDeleteSubscription}
+                  onAddPayment={onAddPayment}
+                  onUpdatePayment={onUpdatePayment}
+                  onDeletePayment={onDeletePayment}
+                  onSyncConfia360={onSyncConfia360}
+                />
+
+                {/* 2. MÓDULOS CONTRATABLES CON PRECIO ASIGNADO */}
+                <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+                  <div className="flex flex-col gap-1 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        Carga y Activación Modular Confia360 (Barra Lateral y Conectores)
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Activa o desactiva módulos para este cliente; los precios individuales se modifican directamente arriba en el Control Maestro.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      disabled={!adminStatus.unlocked || syncingId !== null || isLastActive}
-                      onClick={async () => {
-                        setError(null);
-                        setSavedNotice(null);
-                        setSyncingId(`mod-${mod.id}`);
-                        try {
-                          const next = isActive
-                            ? currentModules.filter((m) => m !== mod.id)
-                            : [...currentModules, mod.id];
-                          await onToggleModules(next);
-                          setSavedNotice(
-                            `${mod.name} ${isActive ? 'desactivado' : 'activado'} en la barra lateral.`
-                          );
-                        } catch (err) {
-                          setError(
-                            err instanceof Error ? err.message : 'Error actualizando módulos.'
-                          );
-                        } finally {
-                          setSyncingId(null);
-                        }
-                      }}
-                      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
-                        isActive
-                          ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                          : 'bg-blue-700 text-white hover:bg-blue-800'
-                      }`}
-                    >
-                      {syncingId === `mod-${mod.id}` ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : !adminStatus.unlocked ? (
-                        <Lock className="h-3.5 w-3.5" />
-                      ) : (
-                        <Check className="h-3.5 w-3.5" />
-                      )}
-                      <span>
-                        {!adminStatus.unlocked
-                          ? 'Requiere PIN para modificar'
-                          : isLastActive
-                            ? 'Módulo base mínimo'
-                            : isActive
-                              ? 'Desactivar módulo'
-                              : 'Activar módulo'}
-                      </span>
-                    </button>
                   </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-5">
-              <ReputationSourcesAdminPanel
-                project={project}
-                adminStatus={adminStatus}
-                onAdminUnlock={onAdminUnlock}
-                onAdminLock={onAdminLock}
-                onAdminChangePin={onAdminChangePin}
-                onUpdateReputationSources={onUpdateReputationSources}
-                onCreateReputationSource={onCreateReputationSource}
-                onUpdateReputationSourceItem={onUpdateReputationSourceItem}
-                onDeleteReputationSourceItem={onDeleteReputationSourceItem}
-                showTopPinGate={false}
-                socialAddonFirst
-              />
-            </div>
-
-            <div className="mt-5">
-              <AdminReleaseNotesPanel
-                releaseNotes={releaseNotes}
-                adminStatus={adminStatus}
-                onCreateNote={onCreateReleaseNote}
-                onUpdateNote={onUpdateReleaseNote}
-                onDeleteNote={onDeleteReleaseNote}
-              />
-            </div>
-
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3 text-xs">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <span className="text-slate-500">Módulos añadidos en Confia360</span>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  Ficha Única · Escucha Social · Tutor Voz · Novedades
-                </p>
-                <p className="mt-1 text-slate-600">
-                  Todos los nuevos módulos están incluidos en el manifiesto compartido con la app Confia360.
-                </p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <span className="text-slate-500">Manifiesto de Integración Confia360</span>
-                <p className="mt-1 font-mono text-xs font-semibold text-slate-900">
-                  GET /api/v1/confia360/modules-manifest
-                </p>
-                <p className="mt-1 text-slate-600">
-                  Expone catálogo modular, Ficha Maestra y estado de Escucha Social hacia la aplicación principal Confia360.
-                </p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <span className="text-slate-500">Sincronización Ficha Única</span>
-                <p className="mt-1 font-mono text-xs font-semibold text-blue-800">
-                  GET/POST /api/v1/confia360/clients
-                </p>
-                <p className="mt-1 text-slate-600">
-                  Prioridad única bidireccional de datos identificativos, suscripciones y pagos pendientes.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            {(project.ecosystemLinks || []).map((bridge) => (
-              <div
-                key={bridge.id}
-                className="rounded-xl border border-slate-200 bg-white p-5 flex flex-col justify-between space-y-4"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-900">{bridge.ecosystemSuite}</span>
-                    <span
-                      className={
-                        bridge.status === 'Conectado'
-                          ? 'font-medium text-emerald-700'
-                          : 'font-medium text-amber-700'
-                      }
-                    >
-                      {bridge.status}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-semibold text-slate-900">{bridge.moduleName}</h3>
-                  <p className="text-xs leading-relaxed text-slate-600">{bridge.description}</p>
-                </div>
-
-                <div className="space-y-3 border-t border-slate-100 pt-3 text-xs">
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>Registros sincronizados</span>
-                    <span className="font-mono font-semibold text-slate-900 tabular-nums">
-                      {bridge.syncedRecords}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-500">
-                    <span>Última sincronización</span>
-                    <span className="font-mono tabular-nums">{bridge.lastSyncAt}</span>
-                  </div>
-                  <p className="truncate font-mono text-[11px] text-slate-400">
-                    {bridge.endpointPath}
-                  </p>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      disabled={syncingId !== null}
-                      onClick={async () => {
-                        setError(null);
-                        setSavedNotice(null);
-                        setSyncingId(bridge.id);
-                        try {
-                          await onSyncEcosystem(bridge.id, false);
-                          setSavedNotice(`Sincronizado con ${bridge.ecosystemSuite}.`);
-                        } catch (err) {
-                          setError(
-                            err instanceof Error ? err.message : 'Error sincronizando módulo.'
-                          );
-                        } finally {
-                          setSyncingId(null);
-                        }
-                      }}
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50 whitespace-nowrap"
-                    >
-                      {syncingId === bridge.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      )}
-                      <span>Sincronizar ahora</span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={syncingId !== null}
-                      onClick={() => onSyncEcosystem(bridge.id, true)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
-                    >
-                      {bridge.status === 'Conectado' ? 'Pausar' : 'Activar'}
-                    </button>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                    {(
+                      [
+                        {
+                          id: 'reputacion_local' as ConfiaModuleId,
+                          name: 'Confia360 ReputaciónLocal',
+                          sku: 'Módulo 01 · Visibilidad & Reseñas',
+                          pitch:
+                            'Ficha Google Business Profile, checklist de completitud, motor ético de invitaciones multicanal sin review gating, incidencias SLA y auditoría NAP en directorios.',
+                          synergy:
+                            'Si se combina con Campañas y SEO-GEO, convierte reseñas 5★ en creatividades sociales y actualiza landings locales.',
+                        },
+                        {
+                          id: 'seo_geo' as ConfiaModuleId,
+                          name: 'Confia360 SEO-GEO',
+                          sku: 'Módulo 02 · Maps & Respuestas IA',
+                          pitch:
+                            'Malla Geo-Grid por código postal, monitor de citas en ChatGPT/Gemini/Perplexity, previsiones SEO proactivas, auditoría técnica y backlinks éticos.',
+                          synergy:
+                            'Conecta caídas previstas en IAs directamente con el Calendario Estratégico y refuerza páginas en zonas débiles del Geo-Grid.',
+                        },
+                        {
+                          id: 'campanas' as ConfiaModuleId,
+                          name: 'Confia360 Campañas y Estacionalidad',
+                          sku: 'Módulo 03 · Demanda & Media',
+                          pitch:
+                            'Calendario comercial español, avisos proactivos por clima y stock en vivo, y generador multiformato para Meta Ads, TikTok y YouTube Shorts.',
+                          synergy:
+                            'Sincroniza eventos estacionales con publicaciones locales en GBP y promociones cuando hay excedente de catálogo.',
+                        },
+                      ] as const
+                    ).map((mod) => {
+                      const currentModules = project.enabledModules || [
+                        'reputacion_local',
+                        'seo_geo',
+                        'campanas',
+                      ];
+                      const isActive = currentModules.includes(mod.id);
+                      const isLastActive = isActive && currentModules.length <= 1;
+                      const modPrice = project.clientMaster?.modulePrices?.[mod.id] ?? 0;
+                      return (
+                        <div
+                          key={mod.id}
+                          className={`rounded-xl border p-5 flex flex-col justify-between space-y-4 transition-colors ${
+                            isActive ? 'border-blue-200 bg-blue-50/30' : 'border-slate-200 bg-slate-50/60'
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="font-mono text-[11px] font-medium text-slate-500">
+                                {mod.sku}
+                              </span>
+                              <span className="font-mono font-semibold text-slate-900 tabular-nums">
+                                {modPrice.toFixed(2)} €/mes
+                              </span>
+                            </div>
+                            <h4 className="text-sm font-bold text-slate-900">{mod.name}</h4>
+                            <p className="text-xs leading-relaxed text-slate-600">{mod.pitch}</p>
+                            <p className="border-t border-slate-200/70 pt-2 text-[11px] leading-relaxed text-slate-500">
+                              Sinergia automática: {mod.synergy}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={syncingId !== null || isLastActive}
+                            onClick={async () => {
+                              setError(null);
+                              setSavedNotice(null);
+                              setSyncingId(`mod-${mod.id}`);
+                              try {
+                                const next = isActive
+                                  ? currentModules.filter((m) => m !== mod.id)
+                                  : [...currentModules, mod.id];
+                                await onToggleModules(next);
+                                setSavedNotice(
+                                  `${mod.name} ${isActive ? 'desactivado' : 'activado'} en la barra lateral.`
+                                );
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error ? err.message : 'Error actualizando módulos.'
+                                );
+                              } finally {
+                                setSyncingId(null);
+                              }
+                            }}
+                            className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
+                              isActive
+                                ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                                : 'bg-blue-700 text-white hover:bg-blue-800'
+                            }`}
+                          >
+                            {syncingId === `mod-${mod.id}` ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Check className="h-3.5 w-3.5" />
+                            )}
+                            <span>
+                              {isLastActive
+                                ? 'Módulo base mínimo'
+                                : isActive
+                                  ? 'Desactivar módulo'
+                                  : 'Activar módulo'}
+                            </span>
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
-            ))}
+
+                {/* 3. FUENTES Y ADD-ON ESCUCHA SOCIAL */}
+                <ReputationSourcesAdminPanel
+                  project={project}
+                  adminStatus={adminStatus}
+                  onAdminUnlock={onAdminUnlock}
+                  onAdminLock={onAdminLock}
+                  onAdminChangePin={onAdminChangePin}
+                  onUpdateReputationSources={onUpdateReputationSources}
+                  onCreateReputationSource={onCreateReputationSource}
+                  onUpdateReputationSourceItem={onUpdateReputationSourceItem}
+                  onDeleteReputationSourceItem={onDeleteReputationSourceItem}
+                  showTopPinGate={false}
+                  socialAddonFirst
+                />
+
+                {/* 4. NOTAS INFORMATIVAS DE NOVEDADES */}
+                <AdminReleaseNotesPanel
+                  releaseNotes={releaseNotes}
+                  adminStatus={adminStatus}
+                  onCreateNote={onCreateReleaseNote}
+                  onUpdateNote={onUpdateReleaseNote}
+                  onDeleteNote={onDeleteReleaseNote}
+                />
+
+                {/* 5. INTEGRACIÓN API Y PUENTES ECOSISTEMA CONFIA360 (SOLO ASEXIA + PIN) */}
+                <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Integración Oficial Ecosistema Confia360 y Contratos API
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Endpoints de manifiesto, webhooks de cliente y conectores activos hacia CRM, Kit Digital y Portal Confia360.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3 text-xs">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <span className="text-slate-500">Módulos añadidos en Confia360</span>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        Control Maestro · Escucha Social · Tutor Voz · Novedades
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        Expuestos automáticamente en el manifiesto para la aplicación principal Confia360.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <span className="text-slate-500">Manifiesto de Integración Confia360</span>
+                      <p className="mt-1 font-mono text-xs font-semibold text-slate-900">
+                        GET /api/v1/confia360/modules-manifest
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        Catálogo modular, precios de cliente y capacidades activas en tiempo real.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <span className="text-slate-500">Sincronización Bidireccional Ficha Única</span>
+                      <p className="mt-1 font-mono text-xs font-semibold text-blue-800">
+                        GET/POST /api/v1/confia360/clients
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        Prioridad única bidireccional de datos, tarifas especiales, suscripciones y pagos.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                    {(project.ecosystemLinks || []).map((bridge) => (
+                      <div
+                        key={bridge.id}
+                        className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 flex flex-col justify-between space-y-4"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-slate-900">
+                              {bridge.ecosystemSuite}
+                            </span>
+                            <span
+                              className={
+                                bridge.status === 'Conectado'
+                                  ? 'font-medium text-emerald-700'
+                                  : 'font-medium text-amber-700'
+                              }
+                            >
+                              {bridge.status}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-semibold text-slate-900">
+                            {bridge.moduleName}
+                          </h4>
+                          <p className="text-xs leading-relaxed text-slate-600">
+                            {bridge.description}
+                          </p>
+                        </div>
+
+                        <div className="space-y-3 border-t border-slate-200/70 pt-3 text-xs">
+                          <div className="flex items-center justify-between text-slate-600">
+                            <span>Registros sincronizados</span>
+                            <span className="font-mono font-semibold text-slate-900 tabular-nums">
+                              {bridge.syncedRecords}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-500">
+                            <span>Última sincronización</span>
+                            <span className="font-mono tabular-nums">{bridge.lastSyncAt}</span>
+                          </div>
+                          <p className="truncate font-mono text-[11px] text-slate-400">
+                            {bridge.endpointPath}
+                          </p>
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              disabled={syncingId !== null}
+                              onClick={async () => {
+                                setError(null);
+                                setSavedNotice(null);
+                                setSyncingId(bridge.id);
+                                try {
+                                  await onSyncEcosystem(bridge.id, false);
+                                  setSavedNotice(`Sincronizado con ${bridge.ecosystemSuite}.`);
+                                } catch (err) {
+                                  setError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Error sincronizando módulo.'
+                                  );
+                                } finally {
+                                  setSyncingId(null);
+                                }
+                              }}
+                              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-50 whitespace-nowrap"
+                            >
+                              {syncingId === bridge.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              )}
+                              <span>Sincronizar ahora</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={syncingId !== null}
+                              onClick={() => onSyncEcosystem(bridge.id, true)}
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                            >
+                              {bridge.status === 'Conectado' ? 'Pausar' : 'Activar'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
